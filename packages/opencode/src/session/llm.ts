@@ -45,6 +45,13 @@ export namespace LLM {
 
   export type StreamOutput = StreamTextResult<ToolSet, unknown>
 
+  export function normalizeSystem(system: string[]) {
+    const merged = system.filter((x) => x).join("\n")
+    system.length = 0
+    if (merged) system.push(merged)
+    return system
+  }
+
   export async function stream(input: StreamInput) {
     const l = log
       .clone()
@@ -87,12 +94,7 @@ export namespace LLM {
       { sessionID: input.sessionID, model: input.model },
       { system },
     )
-    // rejoin to maintain 2-part structure for caching if header unchanged
-    if (system.length > 2 && system[0] === header) {
-      const rest = system.slice(1)
-      system.length = 0
-      system.push(header, rest.join("\n"))
-    }
+    normalizeSystem(system)
 
     const variant =
       !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
