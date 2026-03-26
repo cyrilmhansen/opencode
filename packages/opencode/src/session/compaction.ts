@@ -205,7 +205,10 @@ When constructing the summary, try to stick to this template:
 ---`
 
     const promptText = compacting.prompt ?? [defaultPrompt, ...compacting.context].join("\n\n")
-    const msgs = structuredClone(messages)
+    const msgs = prepare({
+      messages,
+      parentID: input.parentID,
+    })
     await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
     const result = await processor.process({
       user: userMessage,
@@ -268,7 +271,7 @@ When constructing the summary, try to stick to this template:
             sessionID: input.sessionID,
           })
         }
-      } else {
+      } else if (!(await queued(input.sessionID, input.parentID))) {
         const continueMsg = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "user",
@@ -299,6 +302,24 @@ When constructing the summary, try to stick to this template:
     if (processor.message.error) return "stop"
     Bus.publish(Event.Compacted, { sessionID: input.sessionID })
     return "continue"
+  }
+
+  export function prepare(input: { messages: MessageV2.WithParts[]; parentID: MessageID }) {
+    const idx = input.messages.findIndex((msg) => msg.info.id === input.parentID)
+    return structuredClone(idx === -1 ? input.messages : input.messages.slice(0, idx))
+  }
+
+  export async function queued(sessionID: SessionID, parentID: MessageID) {
+    return hasQueuedUser(await Session.messages({ sessionID }), parentID)
+  }
+
+  export function hasQueuedUser(messages: MessageV2.WithParts[], parentID: MessageID) {
+    const idx = messages.findIndex((msg) => msg.info.id === parentID)
+    if (idx === -1) return false
+    return messages.slice(idx + 1).some((msg) => {
+      if (msg.info.role !== "user") return false
+      return !msg.parts.some((part) => part.type === "compaction")
+    })
   }
 
   export const create = fn(
